@@ -12,6 +12,21 @@ Consequences: what changes, which docs or tasks were updated
 
 ---
 
+## 2026-11-16 · P0-1 accounts set up
+Status: decided
+Context: task P0-1.
+Finding: Intuit app "Line Beagle" (workspace LineBeagle, development keys under Keys and credentials > Development). Its scopes are locked to accounting + payment; we request only `com.intuit.quickbooks.accounting` in the OAuth URL, so the consent screen asks only for that. Development redirect URIs: Intuit's OAuth Playground and `http://localhost:3000/api/qbo/callback`. Add the staging and demo callback URLs once they exist.
+Sandboxes: **Harbor Lane Supply Co.** (QuickBooks Online Plus, US, realm 9341458718457078) is the demo company; purchase orders and the items table are on. "Sandbox Company US 438d" (realm 9341458718647416) is the scratch company for the P1-7 experiments. Every Intuit sandbox comes with Intuit's sample data, so the demo company is not empty: the seed and reset scripts (P3-6) and auto-setup must cope with the sample vendors, customers and bills, or delete them first. The sandbox's company email is the developer's real address: change it to a `.example` address before recording (doc 12 rule).
+Anthropic: workspace `line-beagle-dev` with a $20 monthly spend limit and an email alert at $10 (org limit $1,000). Staging and demo get their own workspaces and keys later (doc 09, T11).
+Local `.env` names (P0-2's `.env.example` must match): `ANTHROPIC_API_KEY`, `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_REDIRECT_URI`, `QBO_ENVIRONMENT=sandbox`. The Anthropic key `local-dev` expires 2026-12-16.
+Consequences: P0-1 done apart from registering the domain. Doc 06 and doc 12 should mention the sample data when P3-6 is built.
+
+## 2026-11-16 · Product name: Line Beagle (linebeagle.com)
+Status: decided (domain not yet registered)
+Context: A10 left "AP Agent" as a working name, to be replaced in P0-1. The domain can't be `.app`.
+Decision: Line Beagle, because the name says what sets it apart from QuickBooks' free bill capture: it checks every invoice line. `linebeagle.com` was unregistered on 2026-11-16 (Verisign RDAP). Other names considered and still free that day: aphound.com, matchwarden.com, payablesentry.com, apmarshal.com. AP Hawk was dropped as too close to Payhawk, an existing AP and spend product. A web search found no product called Line Beagle; this is not a trademark search.
+Consequences: the Intuit app is named Line Beagle. Rename "AP Agent" across the kit, code and the bill `PrivateNote` marker in P0-2. Register the domain before recording the video (P3) or setting up the inbound mail subdomain.
+
 ## 2026-11-16 · Open: can development keys connect other developers' sandbox companies?
 Status: open; resolve in P4 only if you want the optional "connect your own sandbox" sign-up in the demo (doc 12)
 
