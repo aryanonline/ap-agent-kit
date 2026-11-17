@@ -1,5 +1,7 @@
 # Line Beagle
 
+[![CI](https://github.com/aryanonline/ap-agent-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/aryanonline/ap-agent-kit/actions/workflows/ci.yml)
+
 **An accounts-payable inbox for QuickBooks Online that checks every supplier invoice, line by line, against what you agreed to pay.**
 
 Supplier invoices arrive by email. Claude reads them. Plain, tested code checks every line against your purchase orders, price lists or past prices, and checks the arithmetic, duplicates and bank details too. A person approves, and clean invoices post to QuickBooks as bills, with the PDF attached and the PO linked. The wrong ones say what's wrong, in dollars.
@@ -88,17 +90,23 @@ Then sign up for your own account. The first account on a copy becomes its admin
 
 ### Develop
 
-You need Docker, Node.js (current LTS) and pnpm.
+You need Node.js 24 (the version in `.nvmrc`) and pnpm 12 (`npm install -g pnpm@12`). Docker joins in Phase 1.
 
 ```bash
 pnpm install
+pnpm check                       # typecheck, lint (ESLint and Prettier), unit tests with coverage
+```
+
+`pnpm format` fixes formatting. Today the code is the core money math (`src/core/money.ts`) and its tests. These commands arrive with Phase 1:
+
+```bash
 docker compose up -d db mail     # Postgres and the mail catcher only
 pnpm db:migrate
 pnpm dev                         # web on http://localhost:3000
 pnpm worker                      # jobs, the local SMTP listener and mailbox polling
 ```
 
-`pnpm check` runs typecheck, lint and unit tests. Every command is listed in [CLAUDE.md](CLAUDE.md#commands). On Windows, keep the clone outside OneDrive and other synced folders.
+Every command is listed in [CLAUDE.md](CLAUDE.md#commands). On Windows, keep the clone outside OneDrive and other synced folders.
 
 ## Roadmap
 
@@ -106,7 +114,7 @@ Each phase ends with a gate. Details are in the [build plan](docs/11-build-plan.
 
 | Phase | What works when it's done | Status |
 |---|---|---|
-| 0. Prove the core | The checks run on the demo invoices from the command line and produce an Overcharge Report | Started: accounts set up |
+| 0. Prove the core | The checks run on the demo invoices from the command line and produce an Overcharge Report | Started: accounts and repo set up; money math tested |
 | 1. Foundations | Sign in, connect a QuickBooks sandbox, receive email locally, `docker compose up` | Not started |
 | 2. Core loop | Invoices are read, checked and shown in the review screens | Not started |
 | 3. Posting | Approve an invoice and the bill appears in QuickBooks | Not started |

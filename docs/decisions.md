@@ -12,6 +12,40 @@ Consequences: what changes, which docs or tasks were updated
 
 ---
 
+## 2026-11-17 · Toolchain pins (P0-2)
+Status: decided (Node 24 was your call)
+Context: P0-2 bootstraps the repo. Versions were checked against the npm registry on 2026-11-16.
+Decision: Node 24 (LTS "Krypton", supported until April 2028) in `.nvmrc` and `engines` (`^24.11.0`). Node 26 is the active LTS, but 24 was already installed and still bundles corepack. pnpm 12.21.0 in `packageManager`, with its defaults kept: a package version isn't installed until it's a day old (`minimumReleaseAge`), and a dependency with build scripts needs an `allowBuilds` entry (none needs one yet). TypeScript `~6.0.3`, not 7.0, because typescript-eslint supports only TypeScript below 6.1. ESLint 10 flat config with typescript-eslint `strictTypeChecked`, plus a rule that every `eslint-disable` gives a reason. Prettier 3 with defaults; Markdown is excluded, so the docs aren't reformatted. Vitest 5 with V8 coverage, and Vite 8 as an explicit dev dependency (Vitest 5 lists it as a peer). fast-check 4 and decimal.js 10.6. GitHub Actions pinned to commit SHAs (checkout v7.0.1, setup-node v7.1.0, pnpm/action-setup v6.1.1). CI runs `pnpm check` on Ubuntu and Windows; the Windows job checks out with `core.autocrlf` on, so it proves `.gitattributes` keeps every file LF.
+Beyond the Build line: ESLint keeps `src/core` pure. Imports from `db/`, `integrations/`, `app/`, `pipeline/` and Node built-ins are rejected, as are `Date.now()`, `new Date()`, `Math.random()`, `process`, `parseFloat` and `.toNumber()`. That enforces CLAUDE.md rules 2 and 3 from the first core file.
+Consequences: moving to TypeScript 7 waits for typescript-eslint. pnpm 11 and later read only auth and registry settings from `.npmrc`; other pnpm settings go in `pnpm-workspace.yaml`. Developers need pnpm 12 (`npm install -g pnpm@12`); the README says so.
+
+## 2026-11-17 · money.ts: what it accepts and how it rounds
+Status: decided
+Context: P0-2 built `src/core/money.ts`, the decimal helpers every later check uses.
+Decision:
+- **Input** is a plain decimal string only: an optional `-`, 1 to 14 digits before the point (what `numeric(18,4)` holds), and optionally a point and 1 to 10 digits. Anything else throws `InvalidMoneyError`. That covers forms decimal.js would accept (`1e5`, `0x1f`, `Infinity`, `+1`) and printed forms (`$1`, `1,000`, `.5`, `5.`). Turning printed values into this form is the extraction layer's job (P0-3, which can reuse `isDecimalString`). The error message never contains the input, which may be invoice content (rule 7).
+- **Arithmetic** (`add`, `sum`, `subtract`, `multiply`) is exact. A private decimal.js clone works to 1,000 significant digits, and a parsed value has at most 24. Results are never `-0` and never in exponent notation. `Money` is a branded type, so a raw decimal.js result can't be passed back in.
+- **`roundToCents`** rounds half to even. A supplier's system may round half up, so at an exact half cent the two can differ by $0.01. Doc 08's $0.01 arithmetic tolerance absorbs that, so P0-6 must keep the tolerance rather than compare exactly.
+- **`compareWithTolerance(a, b, tol)`** returns 0 when |a − b| ≤ tol: the boundary counts as equal, matching doc 08's "more than". Otherwise it returns 1 or −1, by sign. It covers both the two-sided arithmetic checks and the one-sided `variance > allowed + rounding_abs`.
+Consequences: property tests check every operation against an independent BigInt model, and a Vitest threshold holds `money.ts` at 100% coverage. Still to come: the price-variance rule (`min(pct × expected, abs)`) in P2-4, and formatting money for messages in P0-6.
+
+## 2026-11-17 · .env.example lists only keys something reads
+Status: decided
+Context: P0-2 asks for every optional key, empty, with where to get it, using the P0-1 names.
+Decision: it holds the P0-1 names. `ANTHROPIC_API_KEY`, `QBO_CLIENT_ID` and `QBO_CLIENT_SECRET` are empty. `QBO_REDIRECT_URI=http://localhost:3000/api/qbo/callback` and `QBO_ENVIRONMENT=sandbox` are filled in, because they aren't secrets and have only one right value on a local copy. Each later task adds the keys its code reads (`SMTP_URL`, `BILLING_ENABLED`, `SENTRY_DSN` and the rest), so every line in the file does something.
+Consequences: `tests/env-example.test.ts` fails if a secret gets a value or a key loses its comment.
+
+## 2026-11-17 · "AP Agent" renamed in code
+Status: decided
+Finding: there was no code yet. So the rename comes down to this: the package is named `line-beagle`, and no new file says "AP Agent". The bill `PrivateNote` marker ("Line Beagle · inv … · approved by …", doc 06) is first written by the bill payload builder in P3-1. The GitHub repo is still `aryanonline/ap-agent-kit`; renaming it is your call, and GitHub redirects the old URL.
+Consequences: P3-1 uses doc 06's marker format.
+
+## 2026-11-17 · Open: unit prices printed with more than 4 decimals
+Status: open; decide in P1-2 (the schema)
+Finding: doc 05 stores money and quantities as `numeric(18,4)`, but doc 07 keeps every printed decimal, and some suppliers print unit prices like $0.01875. Saved with 4 decimals, that becomes $0.0188. On 10,000 units the recomputed line is then $0.50 off the printed amount, a false `arithmetic_mismatch`. `money.ts` already accepts up to 10 decimals.
+Options: (a) a wider scale, such as `numeric(18,6)`, for unit-price columns (`invoice_lines.unit_price` and `expected_unit_price`, `price_list_rows`, `ref_po_lines`, `price_history`); (b) keep the printed string next to the rounded value.
+Recommendation: (a). How many decimals QuickBooks accepts in a bill line's `UnitPrice` is a **VERIFY** for P1-7.
+
 ## 2026-11-17 · Local-first and open source; hosting only in an optional hosted edition
 Status: decided (your call on the decision card: "Local-first, hosting optional later")
 Context: with linebeagle.com at checkout, you asked for the product to run entirely on a computer instead, because it's a portfolio piece and hosting would be a cost forever. Staging plus the public demo were estimated at $90 to $180 a month, plus a domain.

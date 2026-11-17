@@ -36,9 +36,9 @@ Rules: one task per branch and PR. If a task is bigger than a session, split it 
 Everything in `src/core/` and `fixtures/demo/` survives into the product. The scripts are throwaway.
 
 - [x] **P0-1 (you) · Accounts and name.** Intuit Developer account and app (development keys), and a **dedicated sandbox company** for the demo. Anthropic API key with a monthly spend limit. A GitHub repo (public, by decision). The product name: Line Beagle. Done 2026-11-16; no domain is needed while it runs locally (`docs/decisions.md`).
-- [ ] **P0-2 · Repo bootstrap.**
+- [x] **P0-2 · Repo bootstrap.**
   Build: pnpm, TypeScript strict, Vitest, ESLint + Prettier, GitHub Actions running `pnpm check` (typecheck, lint, test). `.gitattributes` forcing LF line endings, so a Windows checkout doesn't break scripts inside the containers. Node pinned (`.nvmrc` and `engines`). `.env.example` with every optional key empty and a comment saying where to get it, using the names in `docs/decisions.md` (P0-1). "AP Agent" renamed to Line Beagle in code. `src/core/money.ts` (decimal.js: parse, add, multiply, round half-even to cents, compare with tolerance) with property tests.
-  Done when: CI is green on a PR; `money.ts` is 100% covered.
+  Done when: CI is green on a PR; `money.ts` is 100% covered. Done 2026-11-17 (`docs/decisions.md`).
 - [ ] **P0-3 · Extraction client and CLI.** Docs: 07. Load the `claude-api` skill first.
   Build: `src/core/extraction-schema.ts`; `src/integrations/claude/extract.ts` (structured outputs, refusal handling, cost); `pnpm extract <file>` prints the JSON, tokens and cost.
   Done when: it runs on 3 sample PDFs and an image; schema failures and refusals return typed errors; no document content is logged.

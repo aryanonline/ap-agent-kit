@@ -30,6 +30,7 @@ pnpm dev                      # Next.js web on :3000
 pnpm worker                   # pg-boss worker, SMTP listener (:2525) and IMAP polling
 pnpm check                    # typecheck + lint + unit tests (run before every commit)
 pnpm test [path]              # Vitest; pass a path to run only what you changed
+pnpm format                   # Prettier: fix the formatting pnpm check reports
 pnpm test:e2e                 # Playwright against the demo company (no keys needed)
 pnpm test:e2e:sandbox         # end to end against your QuickBooks sandbox (needs your keys)
 pnpm db:generate              # Drizzle migration from schema changes
