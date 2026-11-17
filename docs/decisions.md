@@ -12,6 +12,12 @@ Consequences: what changes, which docs or tasks were updated
 
 ---
 
+## 2026-11-17 · The GitHub repo stays public
+Status: decided
+Context: P0-1 and the README planned a private repo; `aryanonline/ap-agent-kit` was created public.
+Decision: keep it public and build in public.
+Consequences: any secret committed by mistake is exposed at once, so `.env*` stays in `.gitignore`, GitHub secret scanning and push protection stay on (doc 09, T9), and nothing private goes in the docs (real names, emails, customer data). Real-world invoices from P0-7 are never committed, as planned.
+
 ## 2026-11-16 · P0-1 accounts set up
 Status: decided
 Context: task P0-1.
