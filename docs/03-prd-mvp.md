@@ -1,6 +1,6 @@
 # 03 · PRD: MVP scope and acceptance criteria
 
-**MVP** means everything a self-serve customer needs to go from sign-up to posting bills and paying, with nobody from our side involved, plus the public demo for the portfolio. In `11-build-plan.md` that's Phases 0 to 6.
+**MVP** means everything a company running its own copy needs to go from install and sign-up to posting bills, with nobody from our side involved; the zero-key demo company for the portfolio; and billing built in Stripe test mode for a possible hosted edition. In `11-build-plan.md` that's Phases 0 to 6.
 
 Each story has an ID that the build plan and tests refer to. A story is done only when every acceptance criterion (AC) is covered by an automated test, or by a written manual check in the PR.
 
@@ -18,26 +18,29 @@ Each story has an ID that the build plan and tests refer to. A story is done onl
 | Zero-edit | Approved with no human change to any extracted or coded field | (ours) |
 | Tolerance | Allowed price variance, e.g. 2% or $25, whichever is less | (ours) |
 | Posting mode | `shadow` (nothing posts), `approve` (a person approves each bill), `auto` (clean bills post themselves) | (ours) |
-| Demo workspace | A temporary, isolated organization seeded with fictional data for one visitor | (ours) |
+| Demo company | An organization seeded from `fixtures/demo` with fictional data, replayed extractions and a simulated QuickBooks. Reset at any time | (ours) |
+| Instance admin | The person who runs a copy: the first user to sign up on it | (ours) |
+| Hosted edition | A deployed copy run as a service for other companies (optional, Phase 7) | (ours) |
 
 ## In scope
 
-Self-serve sign-up and onboarding · email intake · extraction of header and line items · validation · QuickBooks reference sync · auto-setup from QuickBooks history · vendor, PO, price and duplicate matching · fraud signals · shadow mode with a comparison report · review and exceptions UI · posting bills with PDF attached and PO linked · learning from corrections · digest and alerts · metrics · trial, plans, Stripe billing and self-serve cancellation · help center · auto-post (opt-in) · admin console · public demo.
+Self-serve sign-up and onboarding · email intake · extraction of header and line items · validation · QuickBooks reference sync · auto-setup from QuickBooks history · vendor, PO, price and duplicate matching · fraud signals · shadow mode with a comparison report · review and exceptions UI · posting bills with PDF attached and PO linked · learning from corrections · digest and alerts · metrics · trial, plans, Stripe billing and self-serve cancellation (built in test mode, off by default) · help center · auto-post (opt-in) · admin console · the demo company and the one-command local install.
 
 ## Out of scope (MVP)
 
-Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop · paying bills · multi-step approval chains · posting vendor credits · multi-currency · non-English invoices · supplier portals, EDI, paper mail scanning · mobile apps · 3-way match with receipts · public API · the partner workspace for bookkeepers (Phase 7).
+Setup calls or done-for-you configuration · hosting it for other companies (the hosted edition is Phase 7) · OAuth mailboxes for Microsoft 365 and Google Workspace (Phase 8) · Xero, NetSuite, QuickBooks Desktop · paying bills · multi-step approval chains · posting vendor credits · multi-currency · non-English invoices · supplier portals, EDI, paper mail scanning · mobile apps · 3-way match with receipts · public API · the partner workspace for bookkeepers (Phase 7).
 
 ---
 
 ## E1. Accounts and companies
 
 **E1-1 Sign up and sign in.**
-- AC1: Sign-up (email or Google) creates an organization with the user as `owner`.
+- AC1: Sign-up (email and password; Google too when a Google OAuth client is configured) creates an organization with the user as `owner`. The first user on a copy also becomes its instance admin (E11).
 - AC2: Owners and admins must enrol in MFA before connecting QuickBooks.
 - AC3: Sessions expire after 12 hours idle; cookies are `Secure` and `HttpOnly`.
-- AC4: The user accepts the terms during sign-up. The terms version, time and user are recorded.
-- AC5: A trial starts (E10-1).
+- AC4: Hosted edition (billing on): the user accepts the terms during sign-up; the terms version, time and user are recorded. A copy you run yourself shows no terms.
+- AC5: Hosted edition: a trial starts (E10-1).
+- AC6: The instance admin can close sign-ups (`SIGNUPS_ENABLED=false`, or a setting), so a copy reachable on a network isn't open to strangers. Invitations still work.
 
 **E1-2 Invite teammates** with role `admin` or `reviewer`.
 - AC1: Reviewers can approve, edit and reject invoices, but can't change settings, connections or billing.
@@ -49,7 +52,7 @@ Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop 
 - AC3: If the edition has no purchase orders, the UI says so and explains which checks will run instead.
 - AC4: Tokens are stored encrypted (doc 09) and never sent to the browser.
 - AC5: If the QuickBooks user can't authorize apps (not an admin), show a plain explanation and an "Invite your QuickBooks admin" action.
-- AC6: A QuickBooks company already on a trial or paid plan in another organization can't start a second trial.
+- AC6: Hosted edition: a QuickBooks company already on a trial or paid plan in another organization can't start a second trial.
 
 **E1-4 Disconnect and reconnect.**
 - AC1: Disconnecting revokes the token with Intuit, deletes it, and pauses posting.
@@ -58,19 +61,26 @@ Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop 
 
 ## E2. Intake
 
-**E2-1 Inbox address per company.** Unique and unguessable: `ap-<12+ random chars>@in.<domain>`.
+**E2-1 Inbox address per company.** Unique and unguessable: `ap-<12+ random chars>@<INBOUND_DOMAIN>` (default `in.localhost`, served by the built-in SMTP listener; a real domain in a hosted edition).
 - AC1: Admins can view and rotate it. The old address works for 7 more days, then rejects mail.
-- AC2: Mail to an unknown address is dropped and logged without its content.
+- AC2: Mail to an unknown address is refused (by the SMTP listener) or dropped (from Postmark), and logged without its content.
 
-**E2-2 Receive email.**
+**E2-2 Receive email** through any intake route: the built-in SMTP listener, an IMAP mailbox (E2-4), or Postmark inbound in a hosted edition (doc 07).
 - AC1: Accepts PDF, PNG, JPG/JPEG and WEBP attachments up to 20 MB each. Other formats, including HEIC phone photos, are archived with reason `unsupported_format` and shown in the UI. Nothing is emailed back to the sender.
-- AC2: Idempotent on the provider's message ID; a redelivered webhook creates no duplicate.
+- AC2: Idempotent on the message ID for its route (Postmark's `MessageID`; the `Message-ID` header, or a hash of the raw message, for SMTP and IMAP); a redelivery creates no duplicate.
 - AC3: Each attachment becomes one document; PDFs holding several invoices are split (E3-4).
 - AC4: Store the SPF/DKIM results and the sender on the email record.
-- AC5: Webhook receipt to stored-and-queued in under 5 seconds at p95.
+- AC5: Arrival (a webhook, the end of SMTP `DATA`, or an IMAP fetch) to stored-and-queued in under 5 seconds at p95.
 - AC6: Gmail forwarding-confirmation emails are recognised, never processed as documents, and their code is shown in onboarding (E13-4).
 
 **E2-3 Manual upload.** Drag and drop PDFs or images into a company's inbox. Same pipeline; source `upload`.
+
+**E2-4 IMAP mailbox.**
+- AC1: An admin connects one mailbox per company in Settings → Email: host, port, TLS, username and password. The password is encrypted at rest like QuickBooks tokens and never shown again.
+- AC2: Only mail received after connecting is fetched, unless the admin picks an earlier date after seeing the message count and an estimated model cost.
+- AC3: The mailbox is opened read-only: nothing is marked, moved or deleted. It's polled every 2 minutes, and each message is processed once (UID tracking plus the unique message ID).
+- AC4: A login failure pauses the mailbox, emails the admins once, and shows the provider's fix: an app password for Gmail; for Microsoft 365, "not supported yet" with the alternatives (forward by hand, upload).
+- AC5: No message content in logs.
 
 ## E3. Extraction
 
@@ -82,6 +92,7 @@ Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop 
 - AC2: Lines: description, supplier SKU, quantity, unit, unit price, amount, line PO reference, and kind (item, freight, fee, tax, discount, other).
 - AC3: A multi-page invoice produces one invoice with all its lines in order.
 - AC4: The output is schema-valid, or the document is `extraction_failed` with the reason. Nothing is ever partially saved.
+- AC5: With no `ANTHROPIC_API_KEY`, documents outside the demo company stop at `extraction_failed` with reason `no_api_key`, shown in plain words with how to add a key. Re-running after adding one works.
 
 **E3-3 Validate the arithmetic** in code (doc 08, step 2).
 - AC1: Flag `arithmetic_mismatch` for line, subtotal or total mismatches beyond the rounding tolerance.
@@ -141,7 +152,7 @@ Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop 
 
 ## E7. Posting
 
-**E7-1 Create the bill** on approval, in `approve` or `auto` posting mode only.
+**E7-1 Create the bill** on approval, in `approve` or `auto` posting mode only, through the company's ledger adapter (QuickBooks, or the demo ledger for the demo company).
 - AC1: VendorRef, DocNumber, TxnDate, DueDate, terms, item or account lines, class, location, customer/job, and a private note linking back.
 - AC2: Lines that matched a PO line are linked to it.
 - AC3: The PDF is attached.
@@ -153,6 +164,8 @@ Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop 
 
 ## E8. Notifications
 
+All email goes out over SMTP. On a local copy it lands in Mailpit unless `SMTP_URL` points at a real provider.
+
 **E8-1 Daily digest** at 8 AM company time on weekdays: new exceptions with dollar impact, posting failures, Ready-queue size. Skipped if there's nothing to report.
 
 **E8-2 Alerts to admins:** QuickBooks disconnected; no email for 3 business days; more than 3 posting failures in an hour.
@@ -163,7 +176,9 @@ Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop 
 
 **E9-2 Monthly overcharge report** for the owner: dollars flagged by vendor and how each was resolved.
 
-## E10. Trial and billing
+## E10. Trial and billing (hosted edition; off unless `BILLING_ENABLED=true`)
+
+With billing off, the default, there are no trials, plans or invoice limits; only the daily document cap (E10-3 AC3) applies.
 
 **E10-1 Trial.**
 - AC1: 14 days or 100 invoices, whichever comes first. No card required.
@@ -179,15 +194,15 @@ Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop 
 **E10-3 Usage and overage.**
 - AC1: Usage is invoices that reach `extracted`. Duplicates, statements and non-invoices don't count.
 - AC2: Daily usage is reported to a Stripe meter. Billed totals reconcile with `usage_daily` (tested).
-- AC3: Because documents that turn out not to be invoices are free but still cost model calls, processing is capped per organization per day: 150 documents in a trial, 500 on a plan, adjustable per organization in the admin console. Documents over the cap wait in the queue, and the admins get one email (T12 in doc 09).
+- AC3: Every document costs a model call, including those that turn out not to be invoices, so processing is capped per organization per day, **with billing on or off**: 500 by default (150 in a hosted trial), adjustable by the instance admin. Documents over the cap wait in the queue, and the admins get one email (T12 and T13 in doc 09).
 
 **E10-4 Failed payments.** A banner for 7 days, then posting pauses; intake continues.
 
-**E10-5 Environment rule.** Demo and staging use Stripe test mode only. Organizations with `billing_mode = demo` never create Stripe customers.
+**E10-5 Test mode only.** Until Phase 7, only Stripe test keys are accepted: the app refuses to start with a live key. Demo organizations always have `billing_mode = none` and never create Stripe customers.
 
-## E11. Operations (internal)
+## E11. Operations (instance admin)
 
-**E11-1 Admin console:** pipeline status for every company, stuck documents, failed jobs, re-run any step, API usage, cost per invoice, and each company's auto-setup coverage (vendors ready, checks active) and onboarding progress.
+**E11-1 Admin console** for whoever runs the copy: pipeline status for every company, stuck documents, failed jobs, re-run any step, API usage, cost per invoice, and each company's auto-setup coverage (vendors ready, checks active) and onboarding progress.
 - AC1: Viewing a customer's invoice content requires a support-access flag the customer switched on, and every view is audited.
 
 ## E12. Auto-post
@@ -216,9 +231,9 @@ Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop 
 - AC5: Measured on the demo dataset: at least 80% of the demo vendors are fully set up automatically (a test).
 
 **E13-4 Email route setup and verification.**
-- AC1: Shows the company's inbox address with a copy button, and four routes: Gmail/Google Workspace, Microsoft 365/Outlook, ask suppliers to send directly, upload or forward by hand.
-- AC2: **Gmail:** when the Gmail forwarding-confirmation email arrives, the confirmation code appears on the onboarding screen within 10 seconds. A filter query is generated from the vendors' known email domains.
-- AC3: **Microsoft 365:** the instructions warn that external forwarding is often blocked (error 5.7.520) and link Microsoft's article. If no mail arrives within 30 minutes of the user saying "rule created", show the troubleshooting panel with the alternatives.
+- AC1: Shows the routes that work on this copy: connect a mailbox (IMAP, E2-4), upload or forward by hand, ask suppliers to send directly (to the connected mailbox), and, when an inbound domain is configured (hosted edition), forward to the company's own address with a copy button.
+- AC2: **Gmail forwarding:** when Gmail's forwarding-confirmation email arrives by any route, its confirmation code appears on the onboarding screen within 10 seconds of arriving (for IMAP, of the next poll; the screen offers "Check now"). A filter query is generated from the vendors' known email domains.
+- AC3: **Microsoft 365:** the instructions say that its mailboxes need OAuth for IMAP (not built yet) and that automatic external forwarding is often blocked (error 5.7.520), and link Microsoft's articles. If no mail arrives within 30 minutes of the user saying "rule created", show the troubleshooting panel with the alternatives.
 - AC4: **Suppliers direct:** a ready-to-copy notice with the address.
 - AC5: A live "waiting for your first email" panel shows the first arrival (vendor, number, total) as soon as it's read.
 - AC6: The step is complete when at least one email arrives by a route other than upload. Upload-only users can skip it, with a warning.
@@ -236,34 +251,40 @@ Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop 
 - AC5: **Start posting** switches to `approve`. It is recommended once 20 or more invoices reach a 60%+ zero-edit rate; before that it shows a warning but is allowed.
 
 **E13-7 Lifecycle emails and stuck detection.**
-- AC1: Emails on day 0 (welcome and next step), 1, 3 and 7, plus the trial emails (E10-1).
+- AC1: Emails on day 0 (welcome and next step), 1, 3 and 7, plus the trial emails in a hosted edition (E10-1).
 - AC2: Triggered emails for each "stuck" signal in doc 02, Part 1. Each email is sent at most once per signal per company.
 - AC3: Every email has a one-click unsubscribe, except security and billing notices.
 
-**E13-8 Help center.** At least 12 articles: connecting QuickBooks, Gmail forwarding, Microsoft 365 forwarding, asking suppliers, price lists, tolerances, exceptions explained (one per type), shadow mode, auto-post, plans and billing, data and security, disconnecting and deleting data. Linked in context from the UI.
+**E13-8 Help center.** At least 12 articles: running it locally and adding your own keys, connecting QuickBooks, connecting a mailbox, Gmail, Microsoft 365, asking suppliers, price lists, tolerances, exceptions explained (one per type), shadow mode, auto-post, plans and billing (hosted edition), data and security, disconnecting and deleting data. Kept as Markdown in the repo and rendered in the app, so they work offline. Linked in context from the UI.
 
-## E14. Public demo (portfolio)
+## E14. The demo company and the local quick start (portfolio)
 
-**E14-1 Instant demo workspace.**
-- AC1: "Try the live demo" (with bot protection) creates a private demo organization and signs the visitor into it in under 5 seconds. No sign-up.
-- AC2: Seeded from `fixtures/demo` (doc 12): a fictional distributor with vendors, items, open POs, a price list, price history, and 20 invoices covering every scenario, with stored extraction results (no model calls).
-- AC3: Each visitor's workspace is isolated. It expires 24 hours after creation and is deleted, files included.
-- AC4: Disabled in the demo: connecting or disconnecting QuickBooks, inviting users, changing billing details, outbound emails. Each shows a short "not available in the demo" note.
-- AC5: Every page shows a "Demo: fictional data" label.
+**E14-1 The demo company on first run.**
+- AC1: `docker compose up` on an empty database seeds the demo organization (`kind = demo`), its company (`ledger = demo`) and a demo user from `fixtures/demo` (doc 12): a fictional distributor with vendors, items, open POs, a price list, price history, and 20 invoices covering every scenario, with stored extraction results (no model calls).
+- AC2: The 20 invoices arrive through the built-in SMTP listener (doc 07, A1) in scenario order, and go through the real pipeline: replayed extraction, real evaluation.
+- AC3: **Sign in as the demo user** appears only when `DEMO_LOGIN=true` and `APP_URL` is a localhost address; otherwise the button is absent and the demo user can't sign in. The demo user belongs only to the demo organization and is never the instance admin.
+- AC4: Every page in the demo company shows a "Demo company: fictional data" label.
+- AC5: **Reset demo company** (in Settings, for admins of the demo organization, and `pnpm demo:reset`) restores the seeded state, files included, in under 30 seconds.
+- AC6: The demo company can't connect QuickBooks. Real companies in the same copy are untouched by it and by its reset (covered by the tenant-isolation tests).
 
 **E14-2 Guided tour:** three steps (an overcharge flagged, approve a clean invoice, see the resulting bill), using the real UI. Can be dismissed and restarted.
 
-**E14-3 Simulated QuickBooks.** The demo uses the demo ledger adapter.
+**E14-3 Simulated QuickBooks.** The demo company uses the demo ledger adapter.
 - AC1: Approving "posts" to the simulated ledger. The posted bill is shown as a QuickBooks-style bill, with a toggle that shows the exact JSON payload the real integration would send (the same payload builder as E7-1).
 - AC2: Billed quantities on the demo POs update, so a second invoice against the same PO line behaves correctly.
 
-**E14-4 Upload your own invoice.**
-- AC1: At most 3 documents per workspace, 5 pages and 10 MB each. A global daily cap and a daily model-spend cap; when either is hit, uploads are disabled with a message.
-- AC2: A notice before upload: "Don't upload confidential documents. Files are deleted within 24 hours."
-- AC3: Uploads go through the real pipeline (extraction and checks) against the demo company's data.
-- AC4: A kill switch (`DEMO_UPLOADS_ENABLED`) turns uploads off without a deploy.
+**E14-4 Bring your own invoice.**
+- AC1: Uploading a document into the demo company runs real extraction with the copy's `ANTHROPIC_API_KEY`, and real checks against the demo company's data.
+- AC2: With no key set, the upload panel says what's needed and links to the README section. Nothing fails silently.
+- AC3: The daily document cap applies (E10-3 AC3).
+- AC4: A notice before upload: "Files stay on this computer. Their contents are sent to Anthropic's API to be read."
 
-**E14-5 Demo billing:** the plans page and Stripe Checkout in test mode, showing the test-card hint. No real charges are possible in the demo environment.
+**E14-5 The quick start keeps working.**
+- AC1: A CI job on every pull request starts the stack from a clean checkout with no secrets and runs a Playwright script: sign in as the demo user, open the +$65.00 price variance, approve a clean invoice, open the simulated bill.
+- AC2: The commands CI runs are the README's commands.
+- AC3: Prebuilt images (amd64 and arm64) are published to GitHub Container Registry from `main`, so `docker compose up` doesn't have to build from source. It builds locally if the image can't be pulled.
+
+**E14-6 Billing demo (optional).** With `BILLING_ENABLED=true` and Stripe test keys, the plans page and Stripe Checkout work in test mode, with the test-card hint, and the Stripe CLI forwards webhooks to localhost. No real charge is possible (E10-5).
 
 ---
 
@@ -271,12 +292,13 @@ Setup calls or done-for-you configuration · Xero, NetSuite, QuickBooks Desktop 
 
 | Area | Requirement |
 |---|---|
-| Time to value | Sign-up to first processed invoice: median under 15 minutes. No step requires contacting us |
+| Time to value | `git clone` to the demo company under 5 minutes with prebuilt images; sign-up to first processed invoice: median under 15 minutes. No step requires contacting us |
 | Latency | Email received to Ready or Exceptions: under 3 minutes at p95 |
 | Accuracy | Eval gates in doc 07; zero-edit rate 60%+ by the end of shadow week on the demo and sandbox data |
 | Correctness | Zero bills posted that a customer must delete because of our error. Every posted bill is traceable to its email, document, extraction, edits and approver |
-| Cost | Model cost under $0.15 per invoice; demo model spend under a fixed daily cap |
-| Demo | Workspace ready under 5 seconds; 50 concurrent demo workspaces without slowing down |
-| Availability | Intake never loses mail: store first, process after |
-| Security | Doc 09. Tenant isolation tested on every PR. The demo environment is separate from any customer data |
+| Cost | Model cost under $0.15 per invoice; the demo company costs nothing (replayed extractions) |
+| Demo | Demo company reset in under 30 seconds; the quick start passes in CI on every pull request |
+| Availability | Intake never loses mail: store first, process after, on every route |
+| Security | Doc 09. Tenant isolation tested on every PR. The demo sign-in works only on localhost; every port is bound to 127.0.0.1 |
+| Portability | Runs on Windows (Docker Desktop with WSL 2), macOS and Linux, on amd64 and arm64 |
 | Data | Money as decimal strings or `numeric`, never floating point |

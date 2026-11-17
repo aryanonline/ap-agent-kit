@@ -1,6 +1,6 @@
 # 10 · Pricing, go-to-market and go-live
 
-> **Status:** designed as if live, and **built in Stripe test mode**. Until you decide to sell (Phase 7), the only channel running is the Upwork portfolio (doc 12). Everything below is what goes live when you flip the switch.
+> **Status:** designed as if live, **built in Stripe test mode, and off by default** (`BILLING_ENABLED=false`). The open-source copy is free under the MIT license and has no plans or trials: everything below applies to a hosted edition someone would sell (Phase 7). Until then, the only channels running are the Upwork portfolio and the GitHub repo (doc 12).
 
 ## Pricing
 
@@ -39,7 +39,7 @@
 
 ## Positioning
 
-> For US distributors and service firms on QuickBooks Online that buy against POs or agreed prices, AP Agent is the AP inbox that checks every supplier invoice line by line against what you agreed to pay, and posts the clean ones to QuickBooks. Unlike QuickBooks' own bill capture, Dext or BILL, it catches the overcharges, not just the totals. Set up in 15 minutes, with no call.
+> For US distributors and service firms on QuickBooks Online that buy against POs or agreed prices, Line Beagle is the AP inbox that checks every supplier invoice line by line against what you agreed to pay, and posts the clean ones to QuickBooks. Unlike QuickBooks' own bill capture, Dext or BILL, it catches the overcharges, not just the totals. Set up in 15 minutes, with no call.
 
 **Lead with money, then time. Don't lead with "AI".**
 1. "It found $X in overcharges in your last 20 invoices." (owner)
@@ -57,7 +57,7 @@
 | 5 | **LinkedIn outreach** | Short messages to controllers and AP leads at US distributors with 10 to 100 employees, linking the demo and the free check | No calls; the demo and trial do the selling |
 | 6 | **AI automation agencies** | Reseller pricing | Phase 8 |
 
-**Sales assets:** the live demo, the 60-second and 3-minute videos, the case study, the help center, a security page, and a comparison page ("AP Agent vs QuickBooks bill capture"; state only facts you've checked).
+**Sales assets:** the one-command local demo, the 60-second and 3-minute videos, the case study, the help center, a security page, and a comparison page ("Line Beagle vs QuickBooks bill capture"; state only facts you've checked).
 
 **Funnel (track weekly once live):** `visitors → demo starts → trials → activated (doc 02) → paid`
 Starting hypotheses: activation at least 50% of trials; trial-to-paid at least 15% of activated. Below either, fix that step before buying traffic.
@@ -90,9 +90,10 @@ Starting hypotheses: activation at least 50% of trials; trial-to-paid at least 1
 ## Appendix A: Free overcharge check (self-serve lead magnet)
 
 - **What:** upload up to 10 invoices, plus an optional PO or price-list CSV. Get the Overcharge Report (Appendix B) in the browser within a few minutes. No QuickBooks connection.
-- **How:** reuses the demo upload pipeline (E14-4) in a temporary workspace that's deleted after 24 hours. The same quotas and daily spend cap apply.
+- **How (hosted edition):** a temporary workspace, deleted after 24 hours, running the same pipeline as uploads (E2-3), with per-visitor quotas, a daily spend cap and bot protection.
+- **Locally:** the same report comes from `pnpm proof-run`, or from uploads into the demo company.
 - **Next step:** "Start a free trial to check every invoice automatically."
-- **Upwork note:** the version on the portfolio-linked demo site must not collect email addresses or show contact details (doc 12). The production site version can ask for an email to send the report.
+- **Upwork note:** any page linked from the portfolio must not collect email addresses or show contact details (doc 12). A hosted edition's own site, not linked from Upwork, can ask for an email to send the report.
 
 ## Appendix B: Overcharge Report outline
 
