@@ -6,18 +6,21 @@ Everything Claude Code needs to build `src/integrations/ledger/qbo/`. Items mark
 
 | Step | When | Notes |
 |---|---|---|
-| Create an Intuit Developer account and app, plus a **dedicated sandbox company** for the demo dataset | P0-1 | Development keys connect to **sandbox companies only**. That's everything the portfolio, staging and the demo environment need |
-| Get **production keys** | Phase 7 (P7-3), only if you decide to sell | Needs: app name and logo, host domain, launch URL, disconnect URL, redirect URIs, EULA URL, privacy policy URL, and the **app assessment questionnaire** (self-attested, about 40 minutes). A rejection blocks new connections until Intuit re-reviews. ([Apideck](https://www.apideck.com/blog/quickbooks-security-review.md)) |
+| Create an Intuit Developer account and app, plus a **dedicated sandbox company** for the demo dataset | P0-1 (done) | Development keys connect to **sandbox companies only**, and accept a plain-HTTP `localhost` redirect URI. That's everything the portfolio and a local copy need |
+| **Anyone running their own copy:** create a free Intuit Developer account and app, copy its development keys into `.env`, and add `http://localhost:3000/api/qbo/callback` as a redirect URI | Before their first QuickBooks connection | Keys are never shared between copies. The README links here |
+| Get **production keys** | Phase 7 (P7-3) if you decide to sell; or anyone running a copy who wants to connect a real company, for their own app | Needs: app name and logo, host domain, launch URL, disconnect URL, redirect URIs (HTTPS: plain-HTTP localhost works only with development keys; doc 00, fact 14), EULA URL, privacy policy URL, and the **app assessment questionnaire** (self-attested, about 40 minutes). A rejection blocks new connections until Intuit re-reviews. ([Apideck](https://www.apideck.com/blog/quickbooks-security-review.md)) |
 | Join the **Intuit App Partner Program**, Builder tier ($0) | With production keys | Governs API read fees (below) |
 | **QuickBooks App Store listing** | Phase 7 | Technical review plus security review (scans, demo call, QA environment). Reported at 6 weeks to over 6 months in total. ([Satva](https://satvasolutions.com/blog/intuit-app-store-approval-timeline-developer-guide)) Re-review yearly for listed apps |
 
-The privacy policy and terms that production keys require are built for the demo site in P4-5 and reviewed by a lawyer in P7-5.
+The privacy policy and terms that production keys require are written for a hosted edition and reviewed by a lawyer in P7-5. Someone getting production keys for their own copy writes their own.
 
 ## The sandbox, for the portfolio
 
-- **Staging** connects to the dedicated sandbox company through the normal self-serve flow, which is how the videos are recorded.
-- `scripts/seed-qbo-sandbox.ts` loads the demo dataset (doc 12) into the sandbox; `scripts/reset-qbo-sandbox.ts` removes the bills AP Agent created (found by the `PrivateNote` marker) and recreates used-up POs. Reset before every recording and before the nightly end-to-end test.
-- **Public demo visitors never touch the sandbox.** They use the demo ledger adapter (doc 12 explains why).
+- **A local copy** connects to the dedicated sandbox company through the normal self-serve flow, which is how the videos are recorded.
+- `scripts/seed-qbo-sandbox.ts` loads the demo dataset (doc 12) into the sandbox; `scripts/reset-qbo-sandbox.ts` removes the bills Line Beagle created (found by the `PrivateNote` marker) and recreates used-up POs. Reset before every recording and before `pnpm test:e2e:sandbox`.
+- Every Intuit sandbox company starts with Intuit's sample data (vendors, customers, bills). The seed and reset scripts and auto-setup must cope with it, or delete it first (`decisions.md`, P0-1).
+- QuickBooks refused an email address on the `.example` top-level domain in the sandbox's company settings (2026-11-17). Read the open question in `decisions.md` before seeding vendor emails.
+- **The demo company never touches QuickBooks.** It uses the demo ledger adapter, so anyone can run it with no Intuit account (doc 12).
 
 ## API fees and limits (as reported, checked 2026-11-16)
 
@@ -83,7 +86,7 @@ That is roughly 2,000 to 3,000 a month per company, so **Builder covers about 15
   "DueDate": "2026-12-12",
   "SalesTermRef": { "value": "3" },
   "DepartmentRef": { "value": "2" },
-  "PrivateNote": "AP Agent · inv 0193b1c2 · approved by J. Ruiz",
+  "PrivateNote": "Line Beagle · inv 0193b1c2 · approved by J. Ruiz",
   "Line": [
     {
       "DetailType": "ItemBasedExpenseLineDetail",
@@ -131,9 +134,9 @@ That is roughly 2,000 to 3,000 a month per company, so **Builder covers about 15
 
 Keep a mapping table in `src/integrations/ledger/qbo/errors.ts`, with a test for each row.
 
-## Webhooks (optional, Phase 4)
+## Webhooks (optional, hosted edition, P7-7)
 
-CDC every 30 minutes is enough for the MVP. Intuit webhooks are batched and not real time, and carry only entity name, ID and operation. Add them later for faster PO updates: verify the `intuit-signature` header (HMAC-SHA256 with the verifier token), return 200 within 3 seconds, and enqueue `company.sync`.
+Intuit webhooks need a public HTTPS URL, so a local copy can't receive them; CDC polling is the default everywhere. CDC every 30 minutes is enough for the MVP. Intuit webhooks are batched and not real time, and carry only entity name, ID and operation. Add them later for faster PO updates: verify the `intuit-signature` header (HMAC-SHA256 with the verifier token), return 200 within 3 seconds, and enqueue `company.sync`.
 
 ## Sandbox test plan (task P1-7)
 

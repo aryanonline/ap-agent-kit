@@ -39,18 +39,19 @@ erDiagram
 
 **organizations**
 ```
-id, name, kind enum('customer','demo'), clerk_org_id (unique, null for demo),
-billing_mode enum('stripe','demo'), stripe_customer_id, stripe_subscription_id, plan,
+id, name, kind enum('customer','demo'), auth_org_id (unique; links the Better Auth organization, see the note below),
+billing_mode enum('none','stripe') default 'none', stripe_customer_id, stripe_subscription_id, plan,   -- billing columns are used only when BILLING_ENABLED=true
 subscription_status enum('trialing','active','past_due','paused','canceled'),
 trial_ends_at, trial_invoice_limit int default 100,
 terms_version, terms_accepted_at, terms_accepted_by,
-expires_at null,                 -- demo workspaces only: created_at + 24h
 created_at
 ```
 
-**users**: `id, clerk_user_id (unique), email, name, created_at`
+**users**: `id, auth_user_id (unique), email, name, is_instance_admin bool default false, created_at`. The first user on a copy is its instance admin (E1-1).
 
 **memberships**: `org_id, user_id, role enum('owner','admin','reviewer'), created_at`, PK `(org_id, user_id)`
+
+**Auth tables:** Better Auth keeps its own tables for users, sessions, accounts, organizations, members and two-factor secrets (exact names: **VERIFY** in P1-1). Decide in P1-1 whether `organizations` and `memberships` are those tables extended with our columns, or our own tables linked by `auth_org_id` and `auth_user_id`, and record it in `docs/decisions.md`. Either way, every tenant table keeps `org_id`.
 
 **companies**: one QuickBooks file.
 ```
@@ -86,13 +87,23 @@ Encryption details are in `09-security-compliance.md`. Only `src/integrations/le
 
 ## Intake
 
+**mailboxes**: one IMAP mailbox per company (E2-4).
+```
+id, org_id, company_id, host, port, tls bool, username,
+secret_ciphertext bytea, key_version int,   -- the password, encrypted like QuickBooks tokens (doc 09, T1)
+folder text default 'INBOX', fetch_since timestamptz,   -- only mail received after this is fetched
+uid_validity bigint null, last_uid bigint null, last_polled_at null,
+status enum('active','auth_failed','error','paused'), last_error_code text null, created_at
+```
+
 **emails**
 ```
-id, org_id, company_id, provider 'postmark', provider_message_id (unique), from_address, from_domain, to_address,
+id, org_id, company_id, provider enum('smtp','imap','postmark'), provider_message_id, mailbox_id null, from_address, from_domain, to_address,
 kind enum('normal','forwarding_confirmation') default 'normal',   -- Gmail confirmation mails are shown in onboarding, never processed
 confirmation_code text null,
 subject, received_at, spf_result, dkim_result, raw_object_key, attachment_count, created_at
 ```
+Unique `(company_id, provider, provider_message_id)`. For SMTP and IMAP, `provider_message_id` is the `Message-ID` header, or a SHA-256 of the raw message when that header is missing. Locally delivered mail has `spf_result` and `dkim_result` of `none`.
 
 **documents**: one per attachment, upload or HTML body.
 ```
@@ -219,7 +230,7 @@ action text,          -- e.g. invoice.approved, invoice.field_edited, company.co
 entity_type, entity_id, data jsonb, created_at
 ```
 
-**usage_daily**: `org_id, company_id, date, invoices_extracted, documents_received, model_cost_usd, qbo_read_calls`. Feeds billing (E10), trial limits, the admin console (E11), cost tracking, and the demo's global daily caps (sum over `kind = demo` organizations).
+**usage_daily**: `org_id, company_id, date, invoices_extracted, documents_received, model_cost_usd, qbo_read_calls`. Feeds the daily document cap (E10-3 AC3), the admin console (E11), cost tracking, and, when billing is on, billing and trial limits (E10).
 
 ## Onboarding, shadow mode and the demo
 
@@ -233,7 +244,7 @@ flagged_dollars numeric null, created_at
 
 **onboarding_events**: `org_id, company_id, signal, sent_at`. Stuck signals and lifecycle emails (E13-7); unique `(company_id, signal)` so each email goes once.
 
-**demo_bills**: the simulated ledger's posted bills (demo environment only).
+**demo_bills**: the simulated ledger's posted bills (demo companies only).
 ```
 company_id, ledger_id, invoice_id, payload jsonb (exactly what the QuickBooks adapter would send), created_at
 ```
@@ -243,10 +254,10 @@ The demo ledger reads vendors, items, POs and history from the normal `ref_*` ta
 
 | Data | Kept | Why |
 |---|---|---|
-| Raw emails and PDFs in R2 | 13 months, then deleted (configurable per org) | The PDF is also attached to the bill in QuickBooks, so we are not the system of record |
+| Raw emails and PDFs in storage (local disk, or a bucket when hosted) | 13 months, then deleted (configurable per org) | The PDF is also attached to the bill in QuickBooks, so we are not the system of record |
 | Invoices, lines, exceptions, edits, audit events | While the org is active, plus 90 days after cancellation | Audit trail |
 | QuickBooks reference cache and price history | Deleted within 30 days of disconnect | Intuit asks apps not to keep QuickBooks data beyond what they need |
 | Tokens | Deleted immediately on disconnect or revocation | |
-| Demo workspaces (`kind = demo`) | Deleted with all rows and uploaded files at `expires_at` (24 hours) | Visitors may upload real documents |
-| Ended trials with no plan | Processing paused; data kept 30 days, then deleted | E10-1 |
+| The demo company (`kind = demo`) | Until reset; a reset deletes all its rows and uploaded files, then reseeds it | Someone trying it may upload a real document |
+| Ended trials with no plan (hosted edition) | Processing paused; data kept 30 days, then deleted | E10-1 |
 | `extractions.raw_output` | 13 months | Evals and debugging |

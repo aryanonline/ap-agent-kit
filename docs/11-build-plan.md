@@ -1,18 +1,18 @@
 # 11 · Build plan
 
-Phases are gated: **don't start a phase until the previous gate is met.** The order puts what an Upwork client can see first. A portfolio version goes live at week 8, the public demo at week 10, and the rest of the sale-ready product after that.
+Phases are gated: **don't start a phase until the previous gate is met.** The order puts what an Upwork client can see first. A portfolio version goes live at week 8, the one-command local demo at week 10, and the rest of the sale-ready product after that. Everything runs locally: nothing in Phases 0 to 6 needs hosting, a domain or any paid account beyond Claude usage.
 
 | Phase | Weeks* | Goal | Gate to move on |
 |---|---|---|---|
 | **0. Prove the core** | 1–2 | Extraction and matching proven on the demo dataset and on real invoices | Eval gates pass; demo dataset results match exactly; real-world check recorded |
-| 1. Foundations | 3–4 | Auth, database, jobs, QuickBooks connect and sync, email intake, staging | Sandbox company connected; a fixture email lands as a stored document on staging |
+| 1. Foundations | 3–4 | Auth, database, jobs, QuickBooks connect and sync, email intake, the Docker Compose stack | Sandbox company connected from localhost; a fixture email sent to the SMTP listener lands as a stored document; `docker compose up` works from a fresh clone |
 | 2. Core loop | 5–6 | Extract → evaluate → review UI | All 20 demo invoices flow into the review UI with the expected exceptions |
-| 3. Posting + **portfolio v1** | 7–8 | Approve → bill in the QuickBooks sandbox; video, screenshots, case study | **Portfolio item live on Upwork** |
-| 4. Public demo + **portfolio v2** | 9–10 | Instant demo workspaces, simulated ledger, own-invoice upload | Live demo linked from Upwork; 8 of 10 testers find an overcharge unaided |
+| 3. Posting + **portfolio v1** | 7–8 | Approve → bill in the QuickBooks sandbox; video, screenshots, case study, README | **Portfolio item live on Upwork** |
+| 4. Zero-key demo + **portfolio v2** | 9–10 | The demo company on first run, simulated ledger, own-invoice upload, the quick start tested in CI, prebuilt images | 3 developers who've never seen the repo get from `git clone` to a flagged overcharge unaided in under 10 minutes |
 | 5. Self-serve onboarding | 11–13 | Sign-up to posting with no human help | 3 first-time users reach a posted sandbox bill unaided in under 15 minutes |
-| 6. Billing, ops, hardening + **portfolio v3** | 14–15 | Trial, Stripe (test mode), digests, admin console, auto-post, security | Full checkout in test mode; security checks done; 3-minute walkthrough published |
-| 7. Go live (optional) | — | Production keys, App Store, Stripe live, legal, partners | Only if you decide to sell; gates in doc 10 |
-| 8. Later | — | Xero, vendor credits and more | Customer demand |
+| 6. Billing, ops, hardening + **portfolio v3** | 14–15 | Digests, admin console, auto-post, security, backups; trial and Stripe billing in test mode, off by default | Security checks done; a backup restored; full checkout in test mode with billing on; 3-minute walkthrough published |
+| 7. Hosted edition (optional) | — | A deployed copy: domain, Postmark, production keys, App Store, Stripe live, legal, partners | Only if you decide to sell; gates in doc 10 |
+| 8. Later | — | OAuth mailboxes, Xero, vendor credits and more | Demand |
 
 *At 20 to 30 hours a week.
 
@@ -35,9 +35,9 @@ Rules: one task per branch and PR. If a task is bigger than a session, split it 
 
 Everything in `src/core/` and `fixtures/demo/` survives into the product. The scripts are throwaway.
 
-- [ ] **P0-1 (you) · Accounts and name.** Intuit Developer account and app (development keys), and a **dedicated sandbox company** for the demo. Anthropic API key with a monthly spend limit. A private GitHub repo. The product name and domain (A10: not `.app`).
+- [x] **P0-1 (you) · Accounts and name.** Intuit Developer account and app (development keys), and a **dedicated sandbox company** for the demo. Anthropic API key with a monthly spend limit. A GitHub repo (public, by decision). The product name: Line Beagle. Done 2026-11-16; no domain is needed while it runs locally (`docs/decisions.md`).
 - [ ] **P0-2 · Repo bootstrap.**
-  Build: pnpm, TypeScript strict, Vitest, ESLint + Prettier, GitHub Actions running `pnpm check` (typecheck, lint, test). Copy this kit's `docs/` and `CLAUDE.md` in. `src/core/money.ts` (decimal.js: parse, add, multiply, round half-even to cents, compare with tolerance) with property tests.
+  Build: pnpm, TypeScript strict, Vitest, ESLint + Prettier, GitHub Actions running `pnpm check` (typecheck, lint, test). `.gitattributes` forcing LF line endings, so a Windows checkout doesn't break scripts inside the containers. Node pinned (`.nvmrc` and `engines`). `.env.example` with every optional key empty and a comment saying where to get it, using the names in `docs/decisions.md` (P0-1). "AP Agent" renamed to Line Beagle in code. `src/core/money.ts` (decimal.js: parse, add, multiply, round half-even to cents, compare with tolerance) with property tests.
   Done when: CI is green on a PR; `money.ts` is 100% covered.
 - [ ] **P0-3 · Extraction client and CLI.** Docs: 07. Load the `claude-api` skill first.
   Build: `src/core/extraction-schema.ts`; `src/integrations/claude/extract.ts` (structured outputs, refusal handling, cost); `pnpm extract <file>` prints the JSON, tokens and cost.
@@ -58,21 +58,21 @@ Everything in `src/core/` and `fixtures/demo/` survives into the product. The sc
 
 ## Phase 1: Foundations (weeks 3–4)
 
-- [ ] **P1-1 · App shell and auth.** Stories: E1-1 (AC1–3). Docs: 04.
-  Build: Next.js App Router, Tailwind, shadcn/ui; Clerk with Organizations; roles owner, admin and reviewer; MFA enforced for owners and admins before sensitive actions; signed-in layout with a company switcher.
-  Done when: sign up, create an org, invite a reviewer; role checks enforced on a protected route (tested).
+- [ ] **P1-1 · App shell and auth.** Stories: E1-1 (AC1–3, AC6). Docs: 04, 05.
+  Build: Next.js App Router, Tailwind, shadcn/ui; Better Auth in our Postgres (email and password, TOTP two-factor, organizations; read its current docs first, and record the table decision from doc 05 in `docs/decisions.md`); roles owner, admin and reviewer; the first user becomes instance admin; `SIGNUPS_ENABLED`; MFA enforced for owners and admins before sensitive actions; signed-in layout with a company switcher.
+  Done when: sign up, create an org, invite a reviewer (the invitation lands in Mailpit); role checks enforced on a protected route (tested); sign-up refused when closed (tested).
 - [ ] **P1-2 · Database, repos, tenant isolation.** Docs: 05, 09 (T2).
-  Build: Drizzle and migrations for the tenancy tables; the `src/db/repos/` pattern; the `audit()` helper; the CI rule against direct `db` imports; the `tests/tenant-isolation.test.ts` harness; Docker Postgres for local and CI.
+  Build: Drizzle and migrations for the tenancy tables; the `src/db/repos/` pattern; the `audit()` helper; the CI rule against direct `db` imports; the `tests/tenant-isolation.test.ts` harness; a first `docker-compose.yml` with Postgres and Mailpit (ports on 127.0.0.1) for local work, and a Postgres service in CI.
   Done when: the isolation test passes for every repo function; the CI rule fails a deliberately bad import.
 - [ ] **P1-3 · Job worker.** Docs: 04 (Jobs).
   Build: `src/worker/index.ts` with pg-boss: handler registry, retries with backoff, singleton jobs, schedules, a failed-jobs view. `pnpm worker`.
   Done when: a demo job retries 3 times, shows as failed, and a re-run succeeds.
 - [ ] **P1-4 · Token encryption and log redaction.** Docs: 09 (T1).
-  Build: `src/lib/crypto.ts` (AES-256-GCM, key versions); a rotation script; logger redaction config.
-  Done when: tests cover round trip, a tampered ciphertext failing, rotation, and a redaction test showing tokens never reach log output.
+  Build: `src/lib/crypto.ts` (AES-256-GCM, key versions); a rotation script; logger redaction config; first-run generation of `AUTH_SECRET`, `TOKEN_ENCRYPTION_KEYS` and `REMIT_HASH_KEY` into the data volume when they aren't set.
+  Done when: tests cover round trip, a tampered ciphertext failing, rotation, a second start reusing the generated keys, and a redaction test showing tokens and passwords never reach log output.
 - [ ] **P1-5 · Connect QuickBooks.** Stories: E1-3, E1-4. Docs: 06 (OAuth). Depends on P1-2, P1-4.
   Build: connect, callback and disconnect routes; signed `state`; token storage; refresh under a row lock; `invalid_grant` → `needs_reconnect`; revoke on disconnect; the not-an-admin error path (E1-3 AC5).
-  Done when: the sandbox company connects end to end; a concurrency test runs two refreshes and gets one rotation; disconnect deletes the tokens.
+  Done when: the sandbox company connects end to end from http://localhost:3000; a concurrency test runs two refreshes and gets one rotation; disconnect deletes the tokens.
 - [ ] **P1-6 · QuickBooks client.** Docs: 06.
   Build: `src/integrations/ledger/qbo/client.ts`: typed fetch, `QBO_MINOR_VERSION`, a per-company concurrency limit of 4, backoff, the error mapping with tests, `intuit_tid` logging, read-call counting. Define the `LedgerAdapter` interface.
   Done when: unit tests cover each error-table row against recorded responses.
@@ -85,12 +85,12 @@ Everything in `src/core/` and `fixtures/demo/` survives into the product. The sc
 - [ ] **P1-9 · Bill history backfill.** Stories: E4-2. Depends on P1-8.
   Build: 12 months of bills → `price_history`, `ref_bills` and `ref_bill_lines` (coding, for auto-setup); normalized descriptions; kept current from CDC.
   Done when: sandbox bills appear; re-running creates no duplicates.
-- [ ] **P1-10 · Inbound email.** Stories: E2-1, E2-2 (AC1–5). Docs: 07 Part A.
-  Build: the Postmark webhook with basic auth; inbox tokens with rotation; `emails` and `documents`; R2 storage; the `email.ingest` job; attachment filtering; forwarded-sender parsing; `pnpm replay-email <fixture.json>`.
-  Done when: replaying 5 fixture payloads (including a redelivery, an unknown address and a forwarded email) gives the right rows and no duplicates.
-- [ ] **P1-11 · Staging deploy.** Docs: 04 (Environments).
-  Build: Render web, worker and Postgres; environment groups; Sentry; a health endpoint; migrations on deploy.
-  Done when: staging receives a real email at its inbound domain and stores the document.
+- [ ] **P1-10 · Email intake: SMTP listener and storage.** Stories: E2-1, E2-2 (AC1–5). Docs: 07 Part A (A1).
+  Build: the storage interface with the local disk driver (the S3 driver waits for Phase 7) and signed download URLs; the built-in SMTP listener in the worker; inbox tokens with rotation; `emails` and `documents`; the `email.ingest` job; attachment filtering; forwarded-sender parsing; `pnpm send-invoice <file> --to <address>`.
+  Done when: sending 5 fixture emails (including the same message twice, an unknown address and a forwarded email) gives the right rows and no duplicates, and the files are on disk.
+- [ ] **P1-11 · Docker Compose stack.** Docs: 04 (Environments, First run).
+  Build: one multi-stage `Dockerfile` (web and worker run it with different commands); `docker-compose.yml` with web, worker, Postgres and Mailpit, every port bound to 127.0.0.1; `.env` passed through when it exists; migrations on start under an advisory lock; `/api/health`, which Compose waits on; Sentry only when `SENTRY_DSN` is set.
+  Done when: from a fresh clone with no `.env`, `docker compose up` brings everything up healthy, and `pnpm send-invoice` against it stores a document. Checked on Windows (Docker Desktop) and on macOS or Linux; recorded in `docs/decisions.md`.
 
 ## Phase 2: Core loop (weeks 5–6)
 
@@ -98,7 +98,7 @@ Everything in `src/core/` and `fixtures/demo/` survives into the product. The sc
   Build: `document.extract`: `extractions` rows, splitting by page range, classification routing, `invoices` and `invoice_lines`, failure handling, re-run.
   Done when: a 3-invoice PDF makes 3 invoices; a statement is archived; a refusal or schema failure is visible and can be re-run.
 - [ ] **P2-2 · Full eval.** Docs: 07 Part C.
-  Build: 50+ fixtures across 15+ layouts; all metrics and gates; `--private` mode reading the real-world set (P0-7) from R2; a manually triggered CI workflow (it costs money).
+  Build: 50+ fixtures across 15+ layouts; all metrics and gates; `--private` mode reading the real-world set (P0-7) from `EVAL_PRIVATE_DIR`, a folder outside the repo; a manually triggered CI workflow (it costs money).
   Done when: the baseline is recorded in `docs/decisions.md`; the gates pass.
 - [ ] **P2-3 · Vendor resolution.** Stories: E5-1. Docs: 08 step 3.
   Done when: there's a table test for each method, including the free-mail exclusion.
@@ -136,46 +136,46 @@ Everything in `src/core/` and `fixtures/demo/` survives into the product. The sc
   Build: tolerance presets and custom values, vendor defaults, allowed fees, tax handling, inbox address rotation, team management.
 - [ ] **P3-5 · Manual upload.** Stories: E2-3.
 - [ ] **P3-6 · Sandbox seed and reset scripts.** Docs: 12 (sandbox).
-  Build: `scripts/seed-qbo-sandbox.ts` (demo dataset → sandbox vendors, items, POs, some history bills); `scripts/reset-qbo-sandbox.ts` (delete AP Agent bills by marker; recreate used-up POs).
-  Done when: seed → process all 20 demo invoices on staging → reset → seed again works with no leftovers.
-- [ ] **P3-7 · End-to-end test.** Playwright plus the sandbox: fixture email → extract → evaluate → approve → bill exists in the sandbox. Runs nightly against staging.
+  Build: `scripts/seed-qbo-sandbox.ts` (demo dataset → sandbox vendors, items, POs, some history bills); `scripts/reset-qbo-sandbox.ts` (delete Line Beagle bills by marker; recreate used-up POs). Cope with Intuit's sample data in the sandbox, and settle the `.example` email question first (`docs/decisions.md`).
+  Done when: seed → process all 20 demo invoices on a local copy connected to the sandbox → reset → seed again works with no leftovers.
+- [ ] **P3-7 · End-to-end test against the sandbox.** `pnpm test:e2e:sandbox`: Playwright on a local copy connected to the sandbox: fixture email to the SMTP listener → extract → evaluate → approve → the bill exists in the sandbox. It needs your Intuit keys and a live connection, so you run it before each recording; CI runs the keyless demo-company version instead (P4-4).
 - [ ] **P3-8 (you) · Video v1 and screenshots.** Docs: 12 (video, screenshots).
-  Done when: a 60-second MP4 (captions burned in) and 6 screenshots exist, recorded on staging against the reset sandbox, with no real data on screen.
+  Done when: a 60-second MP4 (captions burned in) and 6 screenshots exist, recorded on a local copy against the reset sandbox, with no real data on screen.
 - [ ] **P3-9 (you) · Case study v1 and Upwork portfolio item.** Docs: 12.
-  Build (Claude Code can help): the case study as a static page on the demo domain, numbers from `pnpm eval`, no contact details.
-  Done when: the portfolio item is published with thumbnail, video, screenshots and case study link. Start tracking invites.
+  Build (Claude Code can help): the case study as `docs/case-study.md`, numbers from `pnpm eval`, no contact details; the README's first screen with screenshots and an honest status line.
+  Done when: the portfolio item is published with thumbnail, video, screenshots, and links to the repo and the case study. Start tracking invites, repo visitors and clones.
 
-## Phase 4: Public demo and portfolio v2 (weeks 9–10)
+## Phase 4: Zero-key demo and portfolio v2 (weeks 9–10)
 
-- [ ] **P4-1 · Demo environment.** Docs: 12, 04 (Environments).
-  Build: separate Render web, worker and Postgres, R2 bucket, Postmark server (`in-demo.` subdomain), a Claude key with its own spend limit, Stripe test keys, development QuickBooks keys, `DEMO_MODE=true`.
-  Done when: the app deploys there with no access to staging or customer resources.
+- [ ] **P4-1 · The demo company on first run.** Stories: E14-1, E14-2. Docs: 12 (the demo company), 04 (First run).
+  Build: `src/demo/`: seed the demo organization, company and user from `fixtures/demo` on an empty database; replayed extractions keyed by file SHA-256; `pnpm demo:send` through the SMTP listener; the localhost-only **Sign in as the demo user**; **Reset demo company** and `pnpm demo:reset`; the "Demo company: fictional data" label; the guided tour.
+  Done when: on an empty database, `docker compose up` ends with all 20 invoices in their expected queues; a reset restores it in under 30 seconds; the demo sign-in is refused when `APP_URL` isn't a localhost address (tested); a real company in the same copy is untouched by a reset (tested).
 - [ ] **P4-2 · Demo ledger adapter.** Stories: E14-3.
   Build: `src/integrations/ledger/demo/` implementing `LedgerAdapter`; the `demo_bills` table; PO billed-quantity updates; the QuickBooks-style bill view with the JSON payload toggle.
   Done when: the same evaluate-and-post integration tests pass against both the demo adapter and a recorded QuickBooks adapter.
-- [ ] **P4-3 · Instant demo workspaces.** Stories: E14-1, E14-2.
-  Build: "Try the live demo" with Turnstile; workspace creation by bulk insert from `fixtures/demo`; replayed extractions; real evaluation; signed demo session; restrictions; the guided tour; 24-hour expiry; hourly cleanup; per-IP and global limits; `DEMO_ENABLED`.
-  Done when: a workspace is ready in under 5 seconds (p95 over 20 runs); two workspaces never see each other's data (tested); expired workspaces disappear, files included.
-- [ ] **P4-4 · Own-invoice upload in the demo.** Stories: E14-4.
-  Done when: quotas, the spend cap and `DEMO_UPLOADS_ENABLED` are enforced (tested), and an uploaded invoice goes through the real pipeline.
-- [ ] **P4-5 · Demo site.** Stories: E14-5. Docs: 12 (case study), 09 (compliance).
-  Build: the landing page (video, "Try the live demo"), the case study page moved into the app, the plans page with Stripe test checkout, privacy policy and terms, privacy-friendly analytics. No contact details on linked pages. An OWASP ZAP baseline scan of the demo, with medium-or-higher findings fixed, before it goes public (doc 09, T11).
+- [ ] **P4-3 · Bring your own invoice.** Stories: E14-4, E3-2 AC5.
+  Done when: with a key, an upload into the demo company goes through the real pipeline; without one, the upload panel explains how to add a key; the daily document cap is enforced (tested).
+- [ ] **P4-4 · The quick start in CI, and prebuilt images.** Stories: E14-5.
+  Build: a GitHub Actions workflow that, on every pull request, builds the image, starts the stack from a clean checkout with no secrets using the README's commands, and runs the Playwright tour (demo sign-in → the +$65.00 exception → approve a clean invoice → the simulated bill). On `main`, publish amd64 and arm64 images to GitHub Container Registry; `docker-compose.yml` pulls them and builds locally if it can't.
+  Done when: the workflow is green and required for merging; a fresh clone reaches the demo company on Windows and on macOS or Linux using the published image (recorded in `docs/decisions.md`).
+- [ ] **P4-5 · README, case study and open-source basics.** Docs: 12 (case study, publish checklist), 09 (compliance roadmap).
+  Build: README screenshots and a GIF of the demo company; the case study brought up to date; `CONTRIBUTING.md`; `SECURITY.md` pointing to GitHub's private vulnerability reporting (you switch it on in the repo settings); issue templates; the repo description and topics. An OWASP ZAP baseline scan of a local copy, with medium-or-higher findings fixed.
   Done when: the publish checklist in doc 12 passes.
-- [ ] **P4-6 (you) · Portfolio v2.** Ten people who've never seen it try the demo unaided; fix what trips them up. Add the demo link to the Upwork item.
-  **Gate:** 8 of 10 find a flagged overcharge and approve an invoice without help.
+- [ ] **P4-6 (you) · Portfolio v2.** Three developers who've never seen the repo follow the README on their own machines (at least one on Windows), with no help. Five non-technical people watch the 60-second video and say what the product does. Fix what trips them up. Add the GIF to the Upwork item.
+  **Gate:** all 3 developers get from `git clone` to a flagged overcharge in under 10 minutes.
 
 ## Phase 5: Self-serve onboarding (weeks 11–13)
 
-- [ ] **P5-1 · Sign-up, terms and trial start.** Stories: E1-1 (AC4–5), E10-1 (AC1, AC4), E1-3 AC6.
-  Done when: sign-up records the terms acceptance and starts a trial; a second trial for the same QuickBooks company is refused (tested).
+- [ ] **P5-1 · Sign-up, terms and trial start (billing on only).** Stories: E1-1 (AC4–5), E10-1 (AC1, AC4), E1-3 AC6.
+  Done when: with billing off (the default), sign-up shows no terms and starts no trial; with billing on, sign-up records the terms acceptance and starts a trial, and a second trial for the same QuickBooks company is refused (tested).
 - [ ] **P5-2 · Connect step with sync progress.** Stories: E13-1, E13-2.
   Done when: live per-entity progress, the edition-aware summary, and a failure state with retry all work against the sandbox.
 - [ ] **P5-3 · Auto-setup from history.** Stories: E13-3. Docs: 08 (Auto-setup).
   Build: the `company.auto_setup` job (email-domain aliases, vendor defaults, item mappings, allowed fees); summary screen; tolerance presets.
   Done when: at least 80% of the demo vendors are ready from the seeded history (test); rules a person made are never changed (test). Also run it on a fresh sandbox company's Intuit sample data and record the coverage in `docs/decisions.md` (doc 00, open question 2).
-- [ ] **P5-4 · Email route setup and verification.** Stories: E13-4, E2-2 AC6.
-  Build: provider tabs; Gmail confirmation-email detection with the code shown live; the generated Gmail filter; Microsoft 365 guidance and the 30-minute troubleshooting panel; the supplier notice; the live first-email panel.
-  Done when: a real Gmail account completes forwarding setup using only the screen; a Gmail confirmation fixture is never processed as a document.
+- [ ] **P5-4 · Connect a mailbox (IMAP) and the email-route step.** Stories: E2-4, E13-4, E2-2 AC6. Docs: 07 (A2).
+  Build: the `mailboxes` table and the Settings → Email screen; `email.poll_imap` (read-only, UID tracking, new mail only by default, a count and cost estimate before any backfill); login-failure handling with each provider's fix; Gmail confirmation-email detection with the code shown in onboarding; the generated Gmail filter; the Microsoft 365 guidance; the supplier notice; the live first-email panel.
+  Done when: a real Gmail mailbox with an app password connects using only the screen, and a new invoice sent to it appears within one poll; older mail isn't fetched; a wrong password pauses the mailbox and shows the fix; a Gmail confirmation fixture is never processed as a document.
 - [ ] **P5-5 · Price-list import wizard.** Stories: E13-5.
   Done when: 5 differently laid-out CSV and XLSX files import correctly after confirming the suggested mappings.
 - [ ] **P5-6 · Shadow mode and comparison report.** Stories: E13-6.
@@ -189,28 +189,29 @@ Everything in `src/core/` and `fixtures/demo/` survives into the product. The sc
 
 ## Phase 6: Billing, operations, hardening, portfolio v3 (weeks 14–15)
 
-- [ ] **P6-1 · Stripe billing (test mode).** Stories: E10-1 (AC2–3), E10-2 to E10-5. Products and prices, Checkout, customer portal, the overage meter, trial conversion, dunning that pauses posting, self-serve cancellation.
-  Done when: a full trial → paid → overage → cancel cycle passes in Stripe test mode, and billed usage reconciles with `usage_daily`.
+- [ ] **P6-1 · Stripe billing (test mode, off by default).** Stories: E10-1 (AC2–3), E10-2 to E10-5, E14-6. Products and prices, Checkout, customer portal, the overage meter, trial conversion, dunning that pauses posting, self-serve cancellation. All behind `BILLING_ENABLED`; live keys refused before Phase 7; webhooks reach localhost through the Stripe CLI.
+  Done when: with billing off, there's no billing UI and no Stripe call (tested); with billing on, a full trial → paid → overage → cancel cycle passes in Stripe test mode, and billed usage reconciles with `usage_daily`.
 - [ ] **P6-2 · Digest and alerts.** Stories: E8-1, E8-2. Tested with a fake clock; no empty digests.
 - [ ] **P6-3 · Admin console.** Stories: E11-1. Pipeline view, failed jobs, re-run, cost per invoice, read-call usage with an alert at 70%, auto-setup coverage and onboarding progress per company, support-access flag with audit.
 - [ ] **P6-4 · Auto-post.** Stories: E12-1. Readiness bar, toggle, vendor allow-list, kill switch, detection of edited or deleted auto-posted bills.
 - [ ] **P6-5 · Monthly overcharge report.** Stories: E9-2.
 - [ ] **P6-6 · Per-vendor accuracy.** Zero-edit rate by vendor, worst first, in the dashboard and the admin console.
-- [ ] **P6-7 · Security hardening.** Docs: 09. CSP, an OWASP ZAP baseline scan with fixes, Dependabot, the incident runbook, a restore test.
-- [ ] **P6-8 · Data rights and trust pages.** Export a company's data; delete an organization; retention jobs; a DPA template and a security page listing the controls in doc 09.
+- [ ] **P6-7 · Security hardening.** Docs: 09. CSP, an OWASP ZAP baseline scan with fixes, Dependabot, the incident runbook, `pnpm db:backup` with a tested restore.
+- [ ] **P6-8 · Data export and deletion.** Export a company's data; delete an organization or a company, files included; retention jobs; a security section in the README listing the controls in doc 09. (The DPA template moves to P7-5.)
 - [ ] **P6-9 (you) · Portfolio v3.** Record the 3-minute walkthrough (doc 12); update the case study with final numbers; refresh the Upwork item.
 
-## Phase 7: Go live (optional; only if you decide to sell)
+## Phase 7: Hosted edition and go live (optional; only if you decide to sell)
 
-- [ ] **P7-1 (you) · Demand check first.** Open trials on the production site (P7-2) to a small audience: bookkeeping communities, and search pages with the free overcharge check (doc 10). Go on only if trials connect QuickBooks and activate (doc 02).
-- [ ] **P7-2 · Production environment**, separate from the demo; restore test; monitoring and alerts.
-- [ ] **P7-3 (you) · QuickBooks production keys** (assessment questionnaire, EULA and privacy URLs); join the App Partner Program; apply for the App Store listing (6 weeks to 6+ months; don't block on it).
+- [ ] **P7-1 (you) · Demand check first.** Open trials on a hosted copy (P7-2) to a small audience: bookkeeping communities, and search pages with the free overcharge check (doc 10). Go on only if trials connect QuickBooks and activate (doc 02).
+- [ ] **P7-2 · Hosted environment.** A deploy guide and one tested target (any Docker host, behind a TLS proxy); a domain that doesn't end in `.app` (A10); managed Postgres with point-in-time recovery; the S3 storage driver; a restore test; monitoring and alerts. Separate from every local copy.
+- [ ] **P7-3 (you) · QuickBooks production keys** (assessment questionnaire, EULA and privacy URLs, HTTPS redirect URIs); join the App Partner Program; apply for the App Store listing (6 weeks to 6+ months; don't block on it).
 - [ ] **P7-4 · Stripe live mode**, sales tax settings, receipts.
-- [ ] **P7-5 (you) · Legal review** of the terms, privacy policy and DPA; a subprocessors page.
+- [ ] **P7-5 (you) · Legal review** of the terms, privacy policy and a DPA template; a subprocessors page.
 - [ ] **P7-6 · Partner workspace** for bookkeepers, and partner billing.
-- [ ] **P7-7 · QuickBooks webhooks** for faster PO updates (optional; doc 06).
+- [ ] **P7-7 · QuickBooks webhooks** for faster PO updates (optional; they need a public URL; doc 06).
 - [ ] **P7-8 (you) · Launch** per doc 10.
+- [ ] **P7-9 · Postmark inbound and the forwarding route.** Stories: E2-2 (Postmark), E13-4 (forwarding to the company's own address). Docs: 07 (A3). The webhook with basic auth; `pnpm replay-email <fixture.json>`; the forwarding tab with the Microsoft 365 30-minute troubleshooting panel; Turnstile on sign-up; cookie-less analytics on the marketing pages.
 
 ## Phase 8: Later (customer demand decides)
 
-Xero adapter (a third `LedgerAdapter`) · posting vendor credits · multi-currency · receipts import for 3-way match · multi-step approvals · supplier statement reconciliation · SOC 2 Type I.
+OAuth mailboxes for Microsoft 365 and Google Workspace (each copy registers its own app with Microsoft or Google) · Xero adapter (a third `LedgerAdapter`) · posting vendor credits · multi-currency · receipts import for 3-way match · multi-step approvals · supplier statement reconciliation · SOC 2 Type I.
