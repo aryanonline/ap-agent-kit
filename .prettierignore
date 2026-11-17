@@ -1,0 +1,3 @@
+# Markdown is written by hand: Prettier would re-wrap its tables and lists.
+*.md
+pnpm-lock.yaml

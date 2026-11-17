@@ -1,0 +1,26 @@
+# Check every text file out with LF line endings on every OS, whatever
+# core.autocrlf says. A script with CRLF endings breaks inside a Linux
+# container ("/bin/sh^M: bad interpreter").
+* text=auto eol=lf
+
+# Binary files: git never touches their bytes. Without these lines an
+# all-ASCII PDF could be treated as text and get its line endings rewritten,
+# which corrupts it and changes its SHA-256 (the key for replayed extractions).
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.tif binary
+*.tiff binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.gz binary
+*.mp4 binary
+*.webm binary
+*.xlsx binary
