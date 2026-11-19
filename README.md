@@ -97,7 +97,18 @@ pnpm install
 pnpm check                       # typecheck, lint (ESLint and Prettier), unit tests with coverage
 ```
 
-`pnpm format` fixes formatting. Today the code is the core money math (`src/core/money.ts`) and its tests. These commands arrive with Phase 1:
+`pnpm format` fixes formatting. Today the code is the core money math (`src/core/money.ts`), the extraction schema (`src/core/extraction-schema.ts`) and the Claude extraction client (`src/integrations/claude/`), with tests that never call the API.
+
+To read one invoice with your own Anthropic key (each run is billed to that key, and prints what it cost):
+
+```bash
+cp .env.example .env             # then set ANTHROPIC_API_KEY in .env
+pnpm --silent extract invoice.pdf > invoice.json   # PDF, PNG, JPEG or WEBP; model, tokens and cost go to stderr
+```
+
+Bank account and routing numbers in the output are masked to their last 4 digits unless you add `--show-bank-details`.
+
+These commands arrive with Phase 1:
 
 ```bash
 docker compose up -d db mail     # Postgres and the mail catcher only
@@ -114,7 +125,7 @@ Each phase ends with a gate. Details are in the [build plan](docs/11-build-plan.
 
 | Phase | What works when it's done | Status |
 |---|---|---|
-| 0. Prove the core | The checks run on the demo invoices from the command line and produce an Overcharge Report | Started: accounts and repo set up; money math tested |
+| 0. Prove the core | The checks run on the demo invoices from the command line and produce an Overcharge Report | Started: accounts and repo set up; money math tested; `pnpm extract` reads an invoice with Claude |
 | 1. Foundations | Sign in, connect a QuickBooks sandbox, receive email locally, `docker compose up` | Not started |
 | 2. Core loop | Invoices are read, checked and shown in the review screens | Not started |
 | 3. Posting | Approve an invoice and the bill appears in QuickBooks | Not started |

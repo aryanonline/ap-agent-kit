@@ -12,6 +12,49 @@ Consequences: what changes, which docs or tasks were updated
 
 ---
 
+## 2026-11-19 · P0-3 run on synthetic samples
+Status: finding
+Context: P0-3's done-when check: `pnpm extract` on 3 PDFs and an image, with your key, on `claude-opus-5-5` at effort `medium`. The samples were 4 synthetic invoices made for this check (all fictional; not committed, since P0-4 builds the eval set): a one-page invoice with PO, freight and tax lines and US dates; a two-page invoice with 26 item lines, a discount, a fuel surcharge and long-form dates; one PDF holding two invoices with a remit-to bank block; and a PNG of the first invoice. 0 real invoices.
+Finding:
+- All 4 succeeded, and every value checked out: each amount, quantity and unit price appears on the source, `qty × unit price` matches every line, and every document's totals add up. US dates came back as ISO with a note on the reading. The two-invoice PDF came back as 2 documents (pages 1 and 2), and the remit-to account and routing numbers were masked in the output.
+- Tokens and cost, per call: one-page PDF 2,007 input + 2,854 cache write + 797 output, $0.0382, 10.5 s; two-page PDF 4,783 input + 2,854 cache read + 2,931 output, $0.0783, 21.0 s; two-invoice PDF 3,882 + 2,854 cached + 1,440 output, $0.0449, 11.7 s; PNG 1,385 + 2,854 cached + 787 output, $0.0219, 7.3 s. Doc 07's estimate ($0.03 to $0.10 per invoice) holds on this tiny synthetic set; P0-4 measures it properly.
+- Caching works: the system prompt plus the schema is a 2,854-token prefix, written once and read by every later call within 5 minutes.
+- No content logged: a run with `ANTHROPIC_LOG=debug` wrote only the 4-line summary to stderr (no invoice text, image data or auth header).
+- The paid checks, including the schema test call and the logging run, cost about $0.22.
+For P0-4 and P0-6:
+- The model lists freight and tax both as lines and in the header `freight` and `tax` fields, so the arithmetic check (doc 08 step 2) must not count them twice.
+- A discount has no header field: subtotal + discount line + surcharge = total, so the arithmetic check must include `discount` lines.
+- A fuel surcharge was filed as `kind: "freight"` and in the `freight` total, with a note. Whether surcharges belong in `fee` / `other_fees` is a schema-description question for the eval.
+
+## 2026-11-19 · Text that isn't printed is "" in the extraction schema (P0-3)
+Status: decided (your call: option (a))
+Context: the first real call returned HTTP 400: "Schemas contains too many parameters with union types (25 parameters with type arrays or anyOf) … (limit: 16 parameters with unions)". Every `.nullable()` field in doc 07's schema counted: 5 on a line, 5 under `vendor`, `remit_to` itself and its 5 fields, `invoice_number`, both dates, `terms`, and the 5 totals. The limit wasn't in doc 07 or the claude-api skill.
+Options were: (a) text fields `""` when not printed, while quantities, prices, amounts, dates and `remit_to` stay nullable (10 union fields); (b) `""` for every missing value (1 union field); (c) drop fields, which loses data vendor resolution uses.
+Decision: (a). Core's format pass turns `""` (or only spaces) into null, so `CheckedExtraction` and everything after it still see null for any missing value; the raw output keeps `""`. The prompt rule now reads "null for amounts, quantities and dates, and an empty string for text". `MAX_UNION_FIELDS = 16` in `src/integrations/claude/config.ts`, and a test holds the schema at 10. A test call before the change also showed the API accepts `fallbacks: "default"` together with structured outputs.
+Consequences: doc 07's schema and prompt were updated to match. `PROMPT_VERSION` stays `x1` and `SCHEMA_VERSION` `s1`: no extraction was ever stored with the earlier text. Any new nullable field must stay within the 6 left.
+
+## 2026-11-19 · Extraction replies are parsed in our code, not by `messages.parse` (P0-3)
+Status: decided (you approved it in the P0-3 plan)
+Context: doc 07 said structured outputs "through `messages.parse`". Reading `@anthropic-ai/sdk` 1.10.0 showed two problems with that helper.
+Finding: `parse()` runs JSON.parse and zod on every text block before the caller can look at `stop_reason`, and throws an `AnthropicError` that embeds the parser's message. (1) A reply cut off at `max_tokens` throws instead of returning, so the stop reason (needed for the streamed retry) and the usage (needed for cost) are lost. (2) V8's JSON.parse messages quote part of the input, so invoice text would sit in an error message that some later caller could log (CLAUDE.md rule 7).
+Decision: still structured outputs. `output_config.format` is `{ type: "json_schema", schema }`, where the schema is the SDK's own `betaZodOutputFormat(ExtractionResult).schema` (the same zod schema through the same strict-schema transform). Requests go through `messages.create` and, for the retry, `messages.stream`. `src/integrations/claude/extract.ts` checks `stop_reason` first, then runs JSON.parse, the wire schema and the format pass, and reports only schema paths and codes. Doc 07's Output row says so.
+Consequences: a JSON.parse failure is `schema_invalid` with stage `json` and no message. The SDK also throws a raw `SyntaxError` quoting the body when an HTTP 200 body isn't JSON (a proxy page, say); that becomes `api_error` with no status, and the message is dropped.
+
+## 2026-11-19 · Extraction call settings and limits (P0-3)
+Status: decided
+Context: P0-3 built the extraction client. The claude-api skill, the SDK's published types and the live API docs were checked on 2026-11-19.
+Decision:
+- **Refusals:** `fallbacks: "default"` with the `server-side-fallback-2026-07-01` beta, on the beta Messages endpoint. The API accepts it alongside `output_config.format` (checked with a real call). A fallback attempt is priced at its own model's rates, from `usage.iterations`; Claude Opus 5 and Claude Opus 4.8 (the documented fallback targets) are in the price table. In a streamed reply that fell back mid-output, only the text after the last `fallback` block is read.
+- **Thinking and effort:** `thinking: { type: "adaptive" }` is sent explicitly (it is Opus 5.5's default, but a fallback model may need it said). Effort is `medium`, Opus 5.5's own default, set explicitly until P0-4's eval compares `low` and `medium`.
+- **Retries:** the SDK's own (`maxRetries: 3`, so 4 tries, exponential backoff honouring `retry-after`). It also retries 408, 409, other 5xx and connection errors. A 401 or 403 is `invalid_api_key`.
+- **Logging:** the SDK client is built with `logLevel: "warn"`. Without that, `ANTHROPIC_LOG=debug` in the environment makes it log full request and response bodies, which a test demonstrates as a control. The client never logs; it returns the extraction or a typed failure plus a record of each call (model, stop reason, tokens, cost, latency, request ID).
+- **Auth:** the key is passed explicitly with `authToken: null`, so `ANTHROPIC_AUTH_TOKEN` or an `ant` login can't stand in for a missing key (E3-2 AC5). SDK 1.x sends the key as `Authorization: Bearer`, not `x-api-key`.
+- **Limits:** PDFs up to 20 MB (E2-2 AC1); images up to 7.5 MB, because the API takes 10 MB of base64 per image. Doc 07's "32 MB" request limit was stale: it is 128 MB on the first-party API, 600 pages. The type comes from the file's first bytes, never its name. GIF is accepted by the API but not by E2-2, so it is refused.
+- **Cost:** exact decimals from list prices (pricing page, 2026-11-19). A model missing from the table gives `null` rather than a guess. A failed call with no reply is recorded with no usage and zero cost.
+- **CLI:** `pnpm extract` masks remit-to account and routing numbers to the last 4 digits unless `--show-bank-details` is given, since terminal output is easy to paste somewhere public.
+- **Tooling:** scripts run with `tsx` (the repo's imports are extensionless, so Node's own type stripping can't run them). Its dependency esbuild has an install script; `pnpm-workspace.yaml` denies it (`allowBuilds: esbuild: false`), and tsx works without it. ESLint now rejects `@anthropic-ai/sdk` imports outside `src/integrations/claude/` (doc 07).
+Consequences: P2-1 can save `calls` straight into `extractions` (one row per call, a `max_tokens` retry included) and `failure.reason` as the document's error. Doc 07's Input, Output, Refusals, Length, Retries and Logging rows were updated.
+
 ## 2026-11-17 · Toolchain pins (P0-2)
 Status: decided (Node 24 was your call)
 Context: P0-2 bootstraps the repo. Versions were checked against the npm registry on 2026-11-16.

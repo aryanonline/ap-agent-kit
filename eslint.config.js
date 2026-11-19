@@ -8,6 +8,12 @@ import tseslint from "typescript-eslint";
 const PURE_CORE = "src/core is pure (CLAUDE.md rule 2):";
 const NO_FLOATS = "Money is never a float (CLAUDE.md rule 3):";
 
+/** Doc 07: only src/integrations/claude/ imports the Anthropic SDK. */
+const ANTHROPIC_SDK = {
+  group: ["@anthropic-ai/sdk", "@anthropic-ai/sdk/**"],
+  message: "Only src/integrations/claude/ imports the Anthropic SDK (doc 07).",
+};
+
 export default defineConfig(
   globalIgnores(["coverage/", "dist/", ".next/"]),
 
@@ -47,6 +53,16 @@ export default defineConfig(
     extends: [tseslint.configs.disableTypeChecked],
   },
 
+  // Only the Claude integration talks to the Claude API. The src/core block below repeats the
+  // pattern, because a later block replaces a rule's options instead of merging them.
+  {
+    files: ["**/*.ts"],
+    ignores: ["src/integrations/claude/**"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [ANTHROPIC_SDK] }],
+    },
+  },
+
   // src/core is pure: no I/O, no clock, no randomness, no floats. Tests may read fixtures.
   {
     files: ["src/core/**/*.ts"],
@@ -56,6 +72,7 @@ export default defineConfig(
         "error",
         {
           patterns: [
+            ANTHROPIC_SDK,
             {
               group: [
                 "**/db",

@@ -17,6 +17,13 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // P0-3: the extraction schema is core, so it is held to the same bar.
+        "src/core/extraction-schema.ts": {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
       },
     },
   },

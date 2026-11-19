@@ -62,34 +62,37 @@ Every copy sends digests, alerts and onboarding emails through SMTP (`SMTP_URL`)
 | SDK | `@anthropic-ai/sdk` (TypeScript). Only `src/integrations/claude/` imports it. |
 | Model | `claude-opus-5-5`, from one constant, `EXTRACTION_MODEL`. Trying a cheaper model (Sonnet or Haiku) is **your** business decision, made only after the eval (below) shows equal accuracy on the private set. Record it in `docs/decisions.md`. |
 | Effort | Run the eval at `low` and `medium` effort, and keep the cheapest level that holds accuracy. |
-| Input | PDFs as a base64 `document` block (requests up to 32 MB and 600 pages). Images as `image` blocks (PNG, JPEG, WEBP). HTML bodies as plain text. |
-| Output | **Structured outputs** (`output_config.format` from a zod schema, through `messages.parse`). The schema lives in `src/core/extraction-schema.ts`, so `core/` and the eval share it. |
+| Input | PDFs as a base64 `document` block (the API takes requests up to 128 MB and 600 pages; we stop at the 20 MB attachment limit of E2-2). Images as `image` blocks (PNG, JPEG, WEBP; the API takes up to 10 MB of base64 per image, so 7.5 MB of image). HTML bodies as a plain-text `document` block. The type comes from the file's first bytes. |
+| Output | **Structured outputs**: `output_config.format` carries the JSON schema made from the zod schema (the SDK's `betaZodOutputFormat(...).schema`). The reply is parsed in our code after checking `stop_reason`, not with `messages.parse`, which parses first and puts parser messages that can quote the reply into its errors (decisions.md, 2026-11-19). The schema lives in `src/core/extraction-schema.ts`, so `core/` and the eval share it. |
 | Tools | **None.** The extraction call has no tools, so text inside an invoice can't make the model do anything except fill in the schema. |
-| Refusals | Check `stop_reason` before reading the output. Enable server-side refusal fallbacks as the skill describes, if that works together with structured outputs in the current SDK; otherwise treat a refusal as `extraction_failed` with reason `refusal`. |
-| Length | `max_tokens` 16,000. If `stop_reason` is `max_tokens` (an invoice with hundreds of lines), retry once using streaming and a higher limit. |
+| Refusals | Check `stop_reason` before reading the output. Server-side refusal fallbacks are on: `fallbacks: "default"` with the `server-side-fallback-2026-07-01` beta, sent with structured outputs. If the whole chain declines, the result is a typed failure with reason `refusal`. A fallback attempt is priced at its own model's rates, from `usage.iterations`. |
+| Length | `max_tokens` 16,000. If `stop_reason` is `max_tokens` (an invoice with hundreds of lines), retry once using streaming and a 64,000 limit; if that is cut off too, the failure is `output_too_long`. |
 | Caching | Put the system prompt and schema first, unchanged across calls, and mark them for prompt caching. Check `cache_read_input_tokens` in the logs. Keep company-specific data out of the extraction prompt, so the cache is shared and nothing about one customer goes into another's request. |
-| Retries | 429 and 529: exponential backoff, up to 4 tries, then `extraction_failed` (and it can be re-run). |
-| Logging | Save model, `prompt_version`, `schema_version`, tokens, cost and latency to `extractions`. Never write document content to application logs. |
+| Retries | 429 and 529: exponential backoff, up to 4 tries (the SDK's own retries, `maxRetries: 3`, which honour `retry-after`), then `extraction_failed` (and it can be re-run). |
+| Logging | Save model, `prompt_version`, `schema_version`, tokens, cost and latency to `extractions`. Never write document content to application logs. The SDK's log level is pinned in code, so `ANTHROPIC_LOG=debug` can't make it log request or response bodies. |
 | Demo company | Documents in the demo company whose SHA-256 matches a file in `fixtures/demo/` use its **replayed** extraction (`extractions.model = 'replay'`), so it needs no key, costs nothing and gives the same result every time. Matching still runs for real. Other uploads into the demo company (E14-4) call the API with the copy's own key. |
 | No key | Without `ANTHROPIC_API_KEY`, any other document stops at `extraction_failed` with reason `no_api_key`, and the UI says how to add one (E3-2 AC5). |
 
 ### Schema (zod, in `src/core/extraction-schema.ts`)
 
-Money and quantities are **decimal strings exactly as printed**, never numbers. That avoids float errors and makes "copied it wrong" easy to see. A second zod pass after parsing checks formats (regex) and converts the strings to `Decimal`.
+Money and quantities are **decimal strings exactly as printed**, never numbers. That avoids float errors and makes "copied it wrong" easy to see. A second zod pass after parsing checks formats (plain decimals, real calendar dates, currency codes, page ranges), converts the strings to `Decimal`, and turns `""` text into null.
+
+**Structured outputs allow at most 16 nullable or union-typed fields in a schema** (the API answers HTTP 400 "too many parameters with union types"). So text that isn't printed is `""`, and only amounts, quantities, dates and `remit_to` are nullable: 10 fields. A test in `src/integrations/claude/` holds the schema under the limit (decisions.md, 2026-11-19).
 
 ```ts
 const Dec = z.string().describe("Plain decimal as printed: no currency symbol or thousands separator. Negative with a leading '-'. e.g. '1234.50'");
 const DateStr = z.string().describe("YYYY-MM-DD");
+const Text = z.string().describe("As printed; an empty string if not printed");
 
 export const ExtractedLine = z.object({
   kind: z.enum(["item", "freight", "fee", "tax", "discount", "other"]),
   description: z.string(),
-  supplier_sku: z.string().nullable(),
+  supplier_sku: Text,
   qty: Dec.nullable(),
-  uom: z.string().nullable().describe("Unit as printed, e.g. EA, CS, BOX, HR, LB"),
+  uom: z.string().describe("Unit as printed, e.g. EA, CS, BOX, HR, LB; an empty string if not printed"),
   unit_price: Dec.nullable(),
   amount: Dec,
-  po_ref: z.string().nullable(),
+  po_ref: Text,
 });
 
 export const ExtractedDocument = z.object({
@@ -98,23 +101,23 @@ export const ExtractedDocument = z.object({
   page_to: z.number().int(),
   quality: z.enum(["clear", "degraded", "unreadable"]),
   vendor: z.object({
-    name: z.string().nullable(),
-    address: z.string().nullable(),
-    email: z.string().nullable(),
-    phone: z.string().nullable(),
-    tax_id: z.string().nullable(),
+    name: Text,
+    address: Text,
+    email: Text,
+    phone: Text,
+    tax_id: Text,
   }),
   remit_to: z.object({
-    name: z.string().nullable(),
-    address: z.string().nullable(),
-    bank_name: z.string().nullable(),
-    account_number: z.string().nullable(),   // transient: stored only as HMAC + last 4 (see 09)
-    routing_number: z.string().nullable(),
+    name: Text,
+    address: Text,
+    bank_name: Text,
+    account_number: Text,   // transient: stored only as HMAC + last 4 (see 09)
+    routing_number: Text,
   }).nullable(),
-  invoice_number: z.string().nullable(),
+  invoice_number: Text,
   invoice_date: DateStr.nullable(),
   due_date: DateStr.nullable(),
-  terms: z.string().nullable(),
+  terms: Text,
   po_numbers: z.array(z.string()),
   currency: z.string().describe("ISO 4217, e.g. USD"),
   lines: z.array(ExtractedLine),
@@ -142,7 +145,8 @@ Rules:
 - One entry in `documents` per distinct invoice, credit memo, statement or other document
   in the file, with its page range. A multi-page invoice is one entry.
 - Copy values exactly as printed. Do not calculate, correct or infer missing amounts.
-  If a value is not printed, return null.
+  If a value is not printed, return null for amounts, quantities and dates, and an
+  empty string for text.
 - One line per printed line item, including freight, fuel or other surcharges, fees,
   discounts and tax lines. Set `kind` for each.
 - Quantities and prices as plain decimal strings. Keep every printed decimal place.
